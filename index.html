@@ -103,7 +103,7 @@ li.missing button{cursor:default;opacity:.55}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 /* ================= SETTINGS ================= */
-const PROXY_URL = "https://script.google.com/macros/s/AKfycbzovlfq8AJRZitellwUvubhAkZ097pkZIYClDpWVExfBwENxrzBSjwRJ0dTSPSa1hof/exec";
+const DATA_URL = "https://raw.githubusercontent.com/MedicalModeller/oyster-fleet/data/positions.json";
 
 // Paste the MMSI list between the backticks in any format:
 // commas, spaces, one per line, or a whole spreadsheet column. Anything that
@@ -146,7 +146,7 @@ const MMSI_TEXT = `
 `;
 
 const REFRESH_MINUTES = 5;
-const BATCH = 100;
+const BATCH = 500;  // proxy serves saved positions, so one request covers the fleet
 /* ============================================ */
 
 const MMSIS = [...new Set(MMSI_TEXT.match(/\b\d{9}\b/g) || [])];
@@ -223,8 +223,9 @@ function popupHtml(v){
 }
 
 async function fetchBatch(ids){
-  const r = await fetch(`${PROXY_URL}?mmsi=${ids.join(",")}`);
-  if (!r.ok) throw new Error(`proxy returned ${r.status}`);
+  // ids unused: the file already holds the whole fleet. Minute stamp avoids stale caches.
+  const r = await fetch(`${DATA_URL}?t=${Math.floor(Date.now() / 60000)}`);
+  if (!r.ok) throw new Error(r.status === 404 ? "positions file not created yet" : `data file returned ${r.status}`);
   const data = await r.json();
   if (data.error) throw new Error(data.error);
   return data;
