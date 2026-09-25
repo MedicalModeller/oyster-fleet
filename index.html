@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Oyster Fleet — live positions</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* ============ SETTINGS: edit these two things ============ */
+/* (see the <script> block further down)                    */
+
+:root{
+  --navy:#10233b; --navy-2:#1b3656; --sea:#dfe8ee; --paper:#ffffff;
+  --ink:#10233b; --muted:#5d6f82; --line:#d3dde6;
+  --live:#1f8a70; --recent:#c7922b; --stale:#9aa7b3;
+  --serif:"Newsreader",Georgia,"Times New Roman",serif;
+  --sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0f1c2d; --ink:#e7eef5; --muted:#9db0c2; --line:#26405e; --sea:#0b1522;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:var(--sans);color:var(--ink);background:var(--paper);
+  display:grid;grid-template-columns:340px 1fr;grid-template-rows:100%;}
+#map{height:100%;background:var(--sea)}
+
+aside{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line);
+  padding-top:env(safe-area-inset-top,0px);background:var(--paper)}
+header{padding:20px 20px 14px;background:var(--navy);color:#fff}
+h1{font-family:var(--serif);font-weight:500;font-size:28px;line-height:1.1;margin:0 0 6px}
+.status{font-size:14px;color:#c9d6e3;margin:0}
+.status strong{color:#fff;font-weight:600}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:#c9d6e3;margin-top:10px}
+.legend span::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;
+  margin-right:6px;vertical-align:1px;background:var(--c)}
+
+.search{padding:12px 20px;border-bottom:1px solid var(--line)}
+.search input{width:100%;font:inherit;font-size:15px;padding:9px 11px;border:1px solid var(--line);
+  border-radius:6px;background:var(--paper);color:var(--ink)}
+.search input:focus{outline:2px solid var(--navy-2);outline-offset:1px}
+
+ul{list-style:none;margin:0;padding:0;overflow-y:auto;flex:1;
+  padding-bottom:env(safe-area-inset-bottom,0px)}
+li button{all:unset;box-sizing:border-box;display:grid;grid-template-columns:12px 1fr auto;gap:10px;
+  align-items:center;width:100%;padding:10px 20px;cursor:pointer;border-bottom:1px solid var(--line)}
+li button:hover{background:rgba(127,150,175,.12)}
+li button:focus-visible{outline:2px solid var(--navy-2);outline-offset:-2px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--c)}
+.nm{font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sub{font-size:13px;color:var(--muted)}
+.age{font-size:13px;color:var(--muted);white-space:nowrap}
+li.missing button{cursor:default;opacity:.55}
+
+.credit{font-size:12px;color:var(--muted);padding:10px 20px;border-top:1px solid var(--line);line-height:1.45}
+.credit a{color:inherit}
+.error{background:#fbe9e7;color:#8a2a1a;padding:10px 20px;font-size:14px;display:none}
+
+/* boat marker */
+.boat{width:22px;height:22px}
+.boat svg{width:22px;height:22px;display:block;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))}
+.leaflet-popup-content{font-family:var(--sans);font-size:14px;line-height:1.45;margin:12px 14px}
+.leaflet-popup-content b{font-family:var(--serif);font-size:18px;font-weight:500}
+
+#toggle{display:none}
+@media (max-width:760px){
+  body{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  aside{max-height:46vh;border-right:0;border-bottom:1px solid var(--line)}
+  body.collapsed aside ul, body.collapsed aside .search{display:none}
+  #toggle{display:inline-block;margin-top:10px;font:inherit;font-size:13px;color:#fff;
+    background:transparent;border:1px solid #5d7a99;border-radius:5px;padding:4px 10px}
+  h1{font-size:22px}
+}
+</style>
+</head>
+<body class="collapsed">
+<aside>
+  <header>
+    <h1>Oyster Fleet</h1>
+    <p class="status" id="status">Loading positions…</p>
+    <div class="legend">
+      <span style="--c:var(--live)">Last hour</span>
+      <span style="--c:var(--recent)">Last 24 h</span>
+      <span style="--c:var(--stale)">Older</span>
+    </div>
+    <button id="toggle" type="button">Show list</button>
+  </header>
+  <div class="error" id="error"></div>
+  <div class="search"><input id="q" type="search" placeholder="Find a yacht by name or MMSI" aria-label="Find a yacht"></div>
+  <ul id="list"></ul>
+  <div class="credit">
+    Vessel positions from <a href="https://openwaters.io/ais" target="_blank" rel="noopener">Open Waters AIS (https://openwaters.io/ais)</a>.
+    <span id="srcCredits"></span>
+    Positions refresh every 5 minutes. Built by TudorDesigns.
+  </div>
+</aside>
+<div id="map"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ================= SETTINGS ================= */
+const PROXY_URL = "https://script.google.com/macros/s/AKfycbzovlfq8AJRZitellwUvubhAkZ097pkZIYClDpWVExfBwENxrzBSjwRJ0dTSPSa1hof/exec";
+
+// Paste the MMSI list between the backticks in any format:
+// commas, spaces, one per line, or a whole spreadsheet column. Anything that
+// isn't a 9-digit number is ignored.
+const MMSI_TEXT = `
+235026188,235095425,235114751,235012784,235099768,235075853,265759860,235051546,232046644,235104148,
+256001578,235032617,233375000,235104395,235110974,248000664,235108003,235007980,235014115,232045982,
+232020035,232010502,203689400,235088825,232004354,232004442,235012989,235087517,232059774,232047222,
+232432000,269107680,236112777,232046508,276014590,319301100,235053832,211233300,319157600,256620000,
+368203140,235003190,235054148,269123100,251573110,232005945,261016090,367735590,235004778,235065798,
+235001665,235087461,235098686,269108180,235061148,367697760,235111696,235113719,339548000,235096783,
+211827040,235098914,244050908,235012474,235068705,232027500,232020196,235115352,244013001,367758930,
+232007766,378112236,378112664,235103416,235040476,235052054,235090006,269109340,235019351,235097366,
+235003079,235052081,211684600,235023577,232014210,232031766,232006090,236112206,235061894,232042438,
+211384120,235077645,232011867,235012026,225989871,235039832,253838000,232047223,232052624,235093042,
+367172050,235052686,512009515,235001490,367592820,235201000,232058074,259012410,368057250,232019955,
+235097388,235065163,235010466,211284260,368280390,232028280,235109117,235579000,235081185,235104904,
+235038909,232043757,235000030,232033138,512000755,235003323,533133494,235012453,235016138,232045029,
+367483730,258146670,378112576,244000286,232014963,235051357,368114860,235110193,235010371,235097903,
+368174290,232017576,235033238,367421390,235050172,235079018,269116930,230169100,235007890,235062965,
+368013230,235008143,235003960,235012594,503796300,235080393,235016636,235004729,232040702,368213580,
+244030029,235058454,244180963,316021693,235104989,366739320,235052554,232028830,368339660,512004962,
+378112237,235034454,310756000,235073046,256002292,232021491,235083315,256004015,235110901,235096236,
+235086634,235015142,235039279,367740380,235034283,247191530,235070723,368115160,236112121,235079563,
+235064752,235000177,235008138,235009455,232004721,367715530,211747480,232037456,235031203,233721000,
+235000307,503054530,250002889,235103414,235034849,319204800,248000327,378319000,367518690,261003418,
+235009162,235056249,235029143,232047980,218035010,265055340,235012024,503647700,368354640,232047979,
+235007150,244710988,235019815,235007228,235111549,244002967,236112723,268242401,232008952,235097747,
+235009666,367177570,235064759,232019560,316033743,235000209,235081408,232006365,235037371,235068569,
+235001954,235061377,235039726,368242140,250004977,232032978,368195930,503177640,232006531,338120363,
+235011974,235055757,235110734,367701190,503463500,235077897,503147860,368098850,232006526,224166630,
+367712250,235033806,235069756,235726000,367528860,368177070,235081118,235019163,269113520,211332810,
+368154740,232041501,235089503,235091941,338140773,235072179,235061871,235086824,247228330,367419850,
+235057999,256003030,368177880,265799090,211166710,338102442,269107360,367734620,257072710,319799000,
+235009162,368221410,367780550,235039166,269492000,367777890,310511000,503036820,235009941,235114916,
+378200000,367501270,367732080,235094006,319174000,235104114,319163900,367539680,235091761,232012102,
+235116955,378112234,235099456,319068700,235020669,235023885,211650400,266330000,235089762,235109975,
+367646080,235077431,235028087,235036358,367554170,247142500,503006180,258155640,378206000,235101402,
+378112158,235081167,512004265,235077051,378001275,235077836,912320520,235064028
+`;
+
+const REFRESH_MINUTES = 5;
+const BATCH = 100;
+/* ============================================ */
+
+const MMSIS = [...new Set(MMSI_TEXT.match(/\b\d{9}\b/g) || [])];
+const map = L.map("map", {worldCopyJump:true}).setView([30, -20], 3);
+const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/";
+const ocean = L.layerGroup([
+  L.tileLayer(ESRI + "Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}", {maxNativeZoom: 13, maxZoom: 18,
+    attribution: "Tiles &copy; Esri, GEBCO, NOAA, National Geographic, Garmin, HERE"}),
+  L.tileLayer(ESRI + "Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}", {maxNativeZoom: 13, maxZoom: 18})
+]).addTo(map);
+const satellite = L.layerGroup([
+  L.tileLayer(ESRI + "World_Imagery/MapServer/tile/{z}/{y}/{x}", {maxZoom: 18,
+    attribution: "Imagery &copy; Esri, Maxar, Earthstar Geographics"}),
+  L.tileLayer(ESRI + "Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", {maxZoom: 18})
+]);
+const street = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom: 18,
+  attribution: "&copy; OpenStreetMap contributors"});
+L.control.layers({"Chart": ocean, "Satellite": satellite, "Street": street}, null, {position: "topright"}).addTo(map);
+L.tileLayer("https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png", {
+  maxZoom: 18, minZoom: 9, attribution: "Seamarks &copy; OpenSeaMap"
+}).addTo(map);
+
+const layer = L.layerGroup().addTo(map);
+const markers = {};
+let vessels = {};   // mmsi -> {name, lat, lon, props}
+let firstLoad = true;
+
+const pick = (p, ...keys) => { for (const k of keys) if (p[k] !== undefined && p[k] !== null && p[k] !== "") return p[k]; };
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function lastSeen(p){
+  const t = pick(p, "seen","last_seen","lastSeen","timestamp","time","updated_at","received_at","ts");
+  if (t === undefined) return null;
+  const d = typeof t === "number" ? new Date(t < 1e12 ? t*1000 : t) : new Date(t);
+  return isNaN(d) ? null : d;
+}
+function freshness(d){
+  if (!d) return "stale";
+  const h = (Date.now() - d) / 36e5;
+  return h < 1 ? "live" : h < 24 ? "recent" : "stale";
+}
+function ago(d){
+  if (!d) return "unknown";
+  const m = Math.round((Date.now() - d) / 6e4);
+  if (m < 1) return "just now";
+  if (m < 60) return m + " min ago";
+  if (m < 2880) return Math.round(m/60) + " h ago";
+  return Math.round(m/1440) + " days ago";
+}
+function boatIcon(p, fresh){
+  const hdg = pick(p, "heading","true_heading");
+  const cog = pick(p, "course","cog");
+  const rot = (hdg !== undefined && hdg < 360) ? hdg : (cog !== undefined && cog < 360 ? cog : 0);
+  const sog = +pick(p, "speed","sog") || 0;
+  const colour = `var(--${fresh})`;
+  const shape = sog > 0.5 && fresh !== "stale"
+    ? `<path d="M11 2 L17 19 L11 15.5 L5 19 Z" fill="${colour}" stroke="#fff" stroke-width="1.5"/>`
+    : `<circle cx="11" cy="11" r="6" fill="${colour}" stroke="#fff" stroke-width="1.5"/>`;
+  return L.divIcon({
+    className:"boat", iconSize:[22,22], iconAnchor:[11,11],
+    html:`<svg viewBox="0 0 22 22" style="transform:rotate(${rot}deg)">${shape}</svg>`
+  });
+}
+function popupHtml(v){
+  const p = v.props, d = lastSeen(p);
+  const sog = pick(p,"speed","sog"), cog = pick(p,"course","cog");
+  const dest = pick(p,"destination"), len = pick(p,"length");
+  return `<b>${esc(v.name)}</b><br>
+    MMSI ${esc(v.mmsi)}${p.flag ? " · " + esc(p.flag) : ""}<br>
+    ${sog !== undefined ? `Speed ${(+sog).toFixed(1)} kn` : ""}${cog !== undefined ? `, course ${Math.round(cog)}°` : ""}<br>
+    ${dest ? `Bound for ${esc(dest)}<br>` : ""}
+    ${len ? `Length ${esc(len)} m<br>` : ""}
+    Last position ${ago(d)}`;
+}
+
+async function fetchBatch(ids){
+  const r = await fetch(`${PROXY_URL}?mmsi=${ids.join(",")}`);
+  if (!r.ok) throw new Error(`proxy returned ${r.status}`);
+  const data = await r.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+async function load(){
+  const err = document.getElementById("error");
+  if (!MMSIS.length){ showError("No MMSI numbers found. Paste the list into MMSI_TEXT in the page source."); return; }
+  try{
+    const batches = [];
+    for (let i=0; i<MMSIS.length; i+=BATCH) batches.push(MMSIS.slice(i, i+BATCH));
+    const results = await Promise.all(batches.map(fetchBatch));
+    const credits = new Set();
+    const next = {};
+    for (const fc of results){
+      const at = fc.attribution || [];
+      (typeof at === "object" && !Array.isArray(at) ? Object.values(at) : [].concat(at))
+        .forEach(a => credits.add(typeof a === "string" ? a : (a.text || a.credit || "")));
+      for (const f of fc.features || []){
+        if (!f.geometry || !f.geometry.coordinates) continue;
+        const p = f.properties || {};
+        const mmsi = String(pick(p,"mmsi") ?? f.id);
+        const [lon, lat] = f.geometry.coordinates;
+        next[mmsi] = {mmsi, lat, lon, props:p, name: pick(p,"name","shipname") || `MMSI ${mmsi}`};
+      }
+    }
+    vessels = next;
+    // Credits other than the Open Waters line we already show
+    document.getElementById("srcCredits").textContent =
+      [...credits].map(c => c.replace(/^\s*Open Waters AIS \(https:\/\/openwaters\.io\/ais\/?\)\.?\s*/i, "").trim().replace(/\.$/, ""))
+        .filter(Boolean).map(c => c + ".").join(" ");
+    draw();
+    err.style.display = "none";
+  }catch(e){
+    showError(`Couldn't load positions: ${e.message}. Will try again in ${REFRESH_MINUTES} minutes.`);
+  }
+}
+function showError(msg){ const el=document.getElementById("error"); el.textContent=msg; el.style.display="block"; }
+
+function draw(){
+  const found = Object.values(vessels);
+  for (const id in markers) if (!vessels[id]) { layer.removeLayer(markers[id]); delete markers[id]; }
+  for (const v of found){
+    const fresh = freshness(lastSeen(v.props));
+    if (markers[v.mmsi]) markers[v.mmsi].setLatLng([v.lat, v.lon]).setIcon(boatIcon(v.props, fresh));
+    else markers[v.mmsi] = L.marker([v.lat, v.lon], {icon: boatIcon(v.props, fresh), title: v.name}).addTo(layer);
+    markers[v.mmsi].bindPopup(popupHtml(v));
+  }
+  const live = found.filter(v => freshness(lastSeen(v.props)) === "live").length;
+  document.getElementById("status").innerHTML =
+    `<strong>${found.length}</strong> of ${MMSIS.length} yachts located, ${live} reporting in the last hour`;
+  if (firstLoad && found.length){
+    map.fitBounds(L.latLngBounds(found.map(v => [v.lat, v.lon])).pad(0.1), {maxZoom: 8});
+    firstLoad = false;
+  }
+  renderList();
+}
+
+function renderList(){
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  const rows = MMSIS.map(m => vessels[m] || {mmsi:m, name:`MMSI ${m}`, missing:true})
+    .filter(v => !q || v.name.toLowerCase().includes(q) || v.mmsi.includes(q))
+    .sort((a,b) => (a.missing - b.missing) || a.name.localeCompare(b.name));
+  document.getElementById("list").innerHTML = rows.map(v => {
+    if (v.missing) return `<li class="missing"><button type="button" disabled>
+      <span class="dot" style="--c:transparent"></span>
+      <span><div class="nm">${esc(v.name)}</div><div class="sub">No recent position</div></span><span></span></button></li>`;
+    const d = lastSeen(v.props), fresh = freshness(d);
+    const sog = pick(v.props,"speed","sog");
+    return `<li><button type="button" data-m="${v.mmsi}">
+      <span class="dot" style="--c:var(--${fresh})"></span>
+      <span><div class="nm">${esc(v.name)}</div><div class="sub">${sog !== undefined && +sog > 0.5 ? (+sog).toFixed(1)+" kn" : "Stationary"}</div></span>
+      <span class="age">${ago(d)}</span></button></li>`;
+  }).join("");
+}
+
+document.getElementById("list").addEventListener("click", e => {
+  const b = e.target.closest("button[data-m]"); if (!b) return;
+  const v = vessels[b.dataset.m];
+  map.flyTo([v.lat, v.lon], 11, {duration: 0.8});
+  markers[v.mmsi].openPopup();
+  if (window.innerWidth <= 760) document.body.classList.add("collapsed"), toggleLabel();
+});
+document.getElementById("q").addEventListener("input", renderList);
+const toggle = document.getElementById("toggle");
+const toggleLabel = () => toggle.textContent = document.body.classList.contains("collapsed") ? "Show list" : "Hide list";
+toggle.addEventListener("click", () => { document.body.classList.toggle("collapsed"); toggleLabel(); setTimeout(() => map.invalidateSize(), 50); });
+
+load();
+setInterval(() => { if (!document.hidden) load(); }, REFRESH_MINUTES * 60000);
+</script>
+</body>
+</html>
