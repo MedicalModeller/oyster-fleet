@@ -27,7 +27,16 @@
 html,body{height:100%;margin:0}
 body{font-family:var(--sans);color:var(--ink);background:var(--paper);
   display:grid;grid-template-columns:340px 1fr;grid-template-rows:100%;}
+.mapwrap{position:relative;min-height:0;height:100%}
 #map{height:100%;background:var(--sea)}
+#banner{position:absolute;z-index:1000;top:12px;left:60px;right:70px;margin:0 auto;max-width:680px;
+  display:flex;gap:12px;align-items:flex-start;padding:10px 12px 10px 16px;border-radius:8px;
+  background:rgba(16,35,59,.92);color:#fff;font-size:14px;line-height:1.45;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+#banner[hidden]{display:none}
+#banner strong{font-weight:600}
+#bannerCount{color:#c9d6e3}
+#bannerClose{all:unset;cursor:pointer;font-size:20px;line-height:1;padding:0 4px;color:#c9d6e3}
+#bannerClose:hover,#bannerClose:focus-visible{color:#fff}
 
 aside{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line);
   padding-top:env(safe-area-inset-top,0px);background:var(--paper)}
@@ -98,7 +107,13 @@ li.missing button{cursor:default;opacity:.55}
     Positions update every 10 minutes; yachts out of AIS range show where they were last seen. Built by TudorDesigns.
   </div>
 </aside>
-<div id="map"></div>
+<main class="mapwrap">
+  <div id="map"></div>
+  <div id="banner" role="status" hidden>
+    <span><strong>The map is still filling up.</strong> Each yacht appears the first time its AIS signal is picked up, then stays at its last known position. <span id="bannerCount"></span></span>
+    <button type="button" id="bannerClose" aria-label="Hide this message">×</button>
+  </div>
+</main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
@@ -274,6 +289,8 @@ function draw(){
     else markers[v.mmsi] = L.marker([v.lat, v.lon], {icon: boatIcon(v.props, fresh), title: v.name}).addTo(layer);
     markers[v.mmsi].bindPopup(popupHtml(v));
   }
+  document.getElementById("bannerCount").textContent =
+    `${found.length} of ${MMSIS.length} located so far.`;
   const live = found.filter(v => freshness(lastSeen(v.props)) === "live").length;
   document.getElementById("status").innerHTML =
     `<strong>${found.length}</strong> of ${MMSIS.length} yachts located, ${live} reporting in the last hour`;
@@ -313,6 +330,15 @@ document.getElementById("q").addEventListener("input", renderList);
 const toggle = document.getElementById("toggle");
 const toggleLabel = () => toggle.textContent = document.body.classList.contains("collapsed") ? "Show list" : "Hide list";
 toggle.addEventListener("click", () => { document.body.classList.toggle("collapsed"); toggleLabel(); setTimeout(() => map.invalidateSize(), 50); });
+
+const banner = document.getElementById("banner");
+let bannerHidden = false;
+try { bannerHidden = localStorage.getItem("fleetBannerHidden") === "1"; } catch (e) {}
+banner.hidden = bannerHidden;
+document.getElementById("bannerClose").addEventListener("click", () => {
+  banner.hidden = true;
+  try { localStorage.setItem("fleetBannerHidden", "1"); } catch (e) {}
+});
 
 load();
 setInterval(() => { if (!document.hidden) load(); }, REFRESH_MINUTES * 60000);
