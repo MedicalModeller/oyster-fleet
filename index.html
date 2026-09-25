@@ -168,9 +168,9 @@ const MMSIS = [...new Set(MMSI_TEXT.match(/\b\d{9}\b/g) || [])];
 const map = L.map("map", {worldCopyJump:true}).setView([30, -20], 3);
 const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/";
 const ocean = L.layerGroup([
-  L.tileLayer(ESRI + "Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}", {maxNativeZoom: 13, maxZoom: 18,
+  L.tileLayer(ESRI + "Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}", {maxNativeZoom: 10, maxZoom: 18,
     attribution: "Tiles &copy; Esri, GEBCO, NOAA, National Geographic, Garmin, HERE"}),
-  L.tileLayer(ESRI + "Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}", {maxNativeZoom: 13, maxZoom: 18})
+  L.tileLayer(ESRI + "Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}", {maxNativeZoom: 10, maxZoom: 18})
 ]).addTo(map);
 const satellite = L.layerGroup([
   L.tileLayer(ESRI + "World_Imagery/MapServer/tile/{z}/{y}/{x}", {maxZoom: 18,
@@ -322,7 +322,7 @@ function renderList(){
 document.getElementById("list").addEventListener("click", e => {
   const b = e.target.closest("button[data-m]"); if (!b) return;
   const v = vessels[b.dataset.m];
-  map.flyTo([v.lat, v.lon], 11, {duration: 0.8});
+  map.flyTo([v.lat, v.lon], Math.max(map.getZoom(), 9), {duration: 0.8});
   markers[v.mmsi].openPopup();
   if (window.innerWidth <= 760) document.body.classList.add("collapsed"), toggleLabel();
 });
