@@ -76,7 +76,7 @@ li.missing button{cursor:default;opacity:.55}
 .leaflet-popup-content b{font-family:var(--serif);font-size:18px;font-weight:500}
 
 #toggle{display:none}
-@media (max-width:760px){
+@media (max-width:760px), (orientation:portrait) and (max-width:1100px){
   body{grid-template-columns:1fr;grid-template-rows:auto 1fr}
   aside{max-height:46vh;border-right:0;border-bottom:1px solid var(--line)}
   body.collapsed aside ul, body.collapsed aside .search{display:none}
@@ -183,6 +183,16 @@ L.control.layers({"Chart": ocean, "Satellite": satellite, "Street": street}, nul
 L.tileLayer("https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png", {
   maxZoom: 18, minZoom: 9, attribution: "Seamarks &copy; OpenSeaMap"
 }).addTo(map);
+
+function fitMinZoom(){
+  const z = Math.max(1, Math.ceil(Math.log2(map.getSize().y / 256)));
+  map.setMinZoom(z);
+  if (map.getZoom() < z) map.setZoom(z);
+}
+fitMinZoom();
+map.on("resize", fitMinZoom);
+map.setMaxBounds([[-85, -3600], [85, 3600]]);
+map.options.maxBoundsViscosity = 1;
 
 const layer = L.layerGroup().addTo(map);
 const markers = {};
@@ -324,7 +334,7 @@ document.getElementById("list").addEventListener("click", e => {
   const v = vessels[b.dataset.m];
   map.flyTo([v.lat, v.lon], Math.max(map.getZoom(), 9), {duration: 0.8});
   markers[v.mmsi].openPopup();
-  if (window.innerWidth <= 760) document.body.classList.add("collapsed"), toggleLabel();
+  if (matchMedia("(max-width:760px), (orientation:portrait) and (max-width:1100px)").matches) { document.body.classList.add("collapsed"); toggleLabel(); setTimeout(() => map.invalidateSize(), 50); }
 });
 document.getElementById("q").addEventListener("input", renderList);
 const toggle = document.getElementById("toggle");
